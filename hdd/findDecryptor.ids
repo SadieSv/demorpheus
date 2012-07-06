@@ -1,0 +1,88 @@
+#include <ids.h>
+#include <idsnet.h>
+#include <idslocal.h>
+#include <idsmetaalert.h>
+#include "aura/util"
+
+#include "findDecryptor.h"
+
+#define FORWARD_BUFFER_SIZE 0x20000 /// 128 KiB, twice the extraction size
+#define BACKWARD_BUFFER_SIZE 0x400 /// 1 KiB, we don't need it
+#define EXTRACTION_BUFFER_SIZE 0x10000 /// 64 KiB
+#define EXTRACTION_BUFFER_OVERLAP (EXTRACTION_BUFFER_SIZE/4) /// 1/4 of the extraction size
+
+#define DEST_PORT 80
+
+scenario FindDecryptors ( NetTCPStreamEvent streamEv, NetTCPStreamCloseEvent closeEv ) 
+{
+	u_int_32 streamId;
+	u_int_32 gatheredOffset;
+	u_int_32 port;
+	
+	FindDecryptors() {
+		port = GetIntVar( "plugins.FindDecryptorPlugin.port", DEST_PORT);
+	}
+	
+	~FindDecryptors(){}
+	
+	initial state state0 {}
+	state state1 {}
+
+	nonconsuming transition state0->state1
+		event NetTCPStreamEvent ( streamEv.destPort == port &&
+					streamEv.tcpStreamDirection == IDS_TCP_FORWARD )
+	{
+		DebugPrint("Got first packet.");
+		streamId = streamEv.tcpStreamId;
+		gatheredOffset = 0;
+
+		SessionGatherParams gatherParams;
+		gatherParams.backBufferLength[0] = FORWARD_BUFFER_SIZE;
+		gatherParams.backBufferLength[1] = BACKWARD_BUFFER_SIZE;
+		streamEv.SetParams ( gatherParams );
+	}
+
+	consuming transition state1->state1
+		event NetTCPStreamEvent ( streamEv.tcpStreamId == streamId &&
+					streamEv.tcpStreamDirection == IDS_TCP_FORWARD )
+	{
+		DebugPrint("Got next packet.");
+		u_int_32 gatheredSize;
+		u_int_32 gatheredDelta;
+		gatheredSize = streamEv.GetGatheredSize(IDS_TCP_FORWARD);
+		gatheredDelta = gatheredSize - gatheredOffset;
+
+		if (gatheredDelta > EXTRACTION_BUFFER_SIZE)
+		{
+		DebugPrint("Searching for decryptor routine.");
+			string buffer;
+			buffer = streamEv.GetGatheredBuffer(IDS_TCP_FORWARD, gatheredOffset, gatheredDelta);
+                        UIntVector start_ofs;
+                        UIntVector end_ofs;
+			if (findDecryptorFind(buffer, start_ofs, end_ofs)>0)
+			{
+				DebugPrint("Decryptor routine(s) found!");
+			}
+			gatheredOffset += gatheredDelta - EXTRACTION_BUFFER_OVERLAP;
+		}
+		StopEventProcessing();
+	}
+
+	unwinding transition state1->state1
+		event NetTCPStreamCloseEvent ( closeEv.tcpStreamId == streamId &&
+					closeEv.tcpStreamDirection == IDS_TCP_FORWARD )
+	{
+		DebugPrint("Got last packet.");
+		u_int_32 gatheredSize;
+		string buffer;
+		gatheredSize = closeEv.GetGatheredSize(IDS_TCP_FORWARD);
+		buffer = closeEv.GetGatheredBuffer(IDS_TCP_FORWARD, gatheredOffset, gatheredSize - gatheredOffset);
+                UIntVector start_ofs;
+                UIntVector end_ofs;
+		if (findDecryptorFind(buffer, start_ofs, end_ofs) > 0)
+		{
+			DebugPrint("Decryptor routine found!");
+		}
+		StopEventProcessing();
+	}
+}; 

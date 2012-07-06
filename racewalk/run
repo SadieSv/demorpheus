@@ -1,0 +1,170 @@
+#!/bin/bash
+
+function show_help(){
+        echo "usage: ./run [OPTIONS]  <path to file or directory> -m MODE -l nop_length "
+        echo "OPTIONS:
+                -r      analyse all files in the directory recursively "
+        echo " MODE:
+                fn      if file or directory contain nop_files (testing false negatives mode)
+                fp      if file or directory contain random data (testing false positives mode) "
+
+}
+
+is_dir=0
+fn=0
+mode=''
+ex_cnt=0
+all_cnt=0
+f_path=''
+len=''
+
+if ! [ $1 ]
+then
+	show_help
+	exit 1
+fi
+
+if [ "$1" = "-r" ]
+then
+        if [ -d $2 ]
+        then
+                is_dir=1
+                f_path=$2
+        else
+                echo "ERROR: $2 is not a directory "
+                exit 1
+        fi
+        if [ "$3" = "-m" ]
+        then
+                case $4 in
+                        fn)
+                                mode='fn'
+                                ;;
+                        fp)
+                                mode='fp'
+                                ;;
+                        *)
+                                echo "ERROR: unknown MODE $4"
+                                show_help
+                                exit 1
+                                ;;
+                esac
+        else
+		echo "ERROR: unknown flag $3"
+		show_help
+		exit 1
+	fi
+	if [ "$5" = "-l" ]
+	then
+		if ( test $6 )
+		then 
+			len=$6
+		else
+			echo "ERROR: nop length is not defined"
+			show_help
+			exit 1
+		fi
+	else
+                echo "ERROR: unknown flag $5"
+                show_help
+                exit 1
+	fi	
+elif ! [ -f $1 ]
+then
+        echo "ERROR: unknowm file name $1"
+        exit 1
+else
+        f_path=$1
+        if [ "$2" = "-m" ]
+        then
+                case $3 in
+                        fn)
+                                mode='fn'
+                                ;;
+                        fp)
+                                mode='fp'
+                                ;;
+                        *)
+                                echo "ERROR: unknown MODE $3"
+                                show_help
+                                exit 1
+                                ;;
+                esac
+        else
+                echo "ERROR: unknown flag $2"
+                show_help
+                exit 1
+        fi
+        if [ "$4" = "-l" ]
+        then
+                if ( test $5 )
+                then
+                        len=$5
+                else
+                        echo "ERROR: nop length is not defined"
+                        show_help
+                        exit 1
+                fi
+        else
+                echo "ERROR: unknown flag $4"
+                show_help
+                exit 1
+        fi
+
+fi
+
+nop=0
+total=0
+total_tmp=0
+nop_tmp=0
+
+function single_analyze(){
+	./racewalkDetect $1 $mode $len 2&>tmp.log
+	total_tmp=`awk '/[0-9]* traces have been analyzed/ {print $1} ' tmp.log `
+	total=`expr $total + $total_tmp`
+	
+	nop_tmp=`awk '/[0-9]* nops have been found/ {print $1} ' tmp.log `      
+	nop=`expr $nop + $nop_tmp`
+
+}
+
+
+function analyze(){
+        if [ -f $1 ]
+        then
+                echo "analyzing $1"
+                single_analyze $1
+        elif [ -d $1 ]
+        then
+                echo "entering directory $1.."
+                for x in `ls $1`; do
+                        analyze $1/$x
+                done
+                echo "leaving directory $1.."
+        fi
+}
+
+if [ $is_dir = 0 ]
+then
+        single_analyze $f_path
+elif [ $is_dir = 1 ]
+then
+        analyze $f_path
+fi
+echo " $total traces have been analyzed"
+echo " $nop nops have been found"
+
+case $mode in
+        fn)
+                cnt=`expr $total - $nop`
+                rate=`perl -e 'print $ARGV[0]/$ARGV[1];' $cnt $total`
+                echo "false negative rate = $rate"
+                ;;
+        fp)
+                rate=`perl -e 'print $ARGV[0]/$ARGV[1];' $nop $total`
+                echo "false positive rate = $rate"
+                ;;
+        *)
+                ;;
+esac
+

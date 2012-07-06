@@ -1,0 +1,48 @@
+It is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+   License for more details.
+1/ Install: 
+	make
+	sudo make install
+2/ Link to libracewalk.so shared library
+See /usr/local/racewalk/examples/racewalkrun.cpp
+Compile:
+	g++ -L/usr/local/lib -lracewalk racewalkrun.cpp -lpcap -o racewalkrun
+
+3/ Link to static i386-dismod
+See /usr/local/racewalk/examples/disrun.cpp
+Compile :
+	g++ --static -o disrun disrun.cpp -L/usr/local/lib/ -li386-dismod
+4/ Usage:
+racewalk  -c cmd -s sled_size [-f rawfile] [-m modelfile] [-r rangefile] [-t testfile]
+    [-i label] [-p pcapfilter]
+-c cmd
+   0 Learning. The next parameter is raw binary nop file's name. It will generate frequency file,
+	scale it & based on that use svm-train to generate svm_model_file & svm_range_file
+	For example,
+	  racewalk -c 0 -s 64 -f nopbinary
+   1 Detect on pcap using svm. The next parameters are svm_model_file , svm_scale_file  & pcap filter option. Note:
+	svm must be learned first by using "-c 0"
+	For example,
+	  racewalk -c 0 -s 128 -f nopbinary
+	  racewalk -c 1 -s 128 -m nopbinary.128.freq.scale.model -r nopbinary.128.freq.range -p "port 80"
+   2 Experience for false positive and false negative. The next parameters  are nopfile to learn & test_file.If test_file is nop file then the label parameter is 1, otherwise -1. It will learn from nopfile and then generate svm_model_file &svm_range_file(if they are already generated then skip). Use
+these model & range file to test test_file
+	For example,
+	  racewalk -c 2 -s 64 -f nopbinary -t nopbinary.test -i 1
+	  racewalk -c 2 -s 64 -f nopbinary -t normal -i -1
+   3 Generate instruction frequency file from raw file. The file is scanned by simple_find_sled. If a fragment is found to be a possible sled, count the instruction frequency of that fragment.
+	For example
+	  racewalk -c 3 -s 64 -f nopbinary -i 1
+-l 
+   lowerbound : default value -1, used with cmd = 0, 2
+-u 
+   upperbound :default value 1, used with cmd = 0, 2
+-n 
+   nu default :value 0.0078125, used with cmd = 0, 2
+-g 
+   gamma :default value 0.0625, used with cmd = 0, 2
+-h
+   help
+

@@ -1,0 +1,50 @@
+#!/bin/bash
+
+function show_help() {
+	echo "usage: ./process_wrapper <path_to_directory> <log_file>"
+}
+
+f_path=''
+log_file=''
+
+#processing parameters
+if ! [ $2 ]
+then
+	show_help
+	exit 1
+fi
+
+if [ -d $1 ]
+then
+	f_path=$1
+else
+	echo "ERROR: $1 is not a directory "
+    exit 1
+fi
+
+log_file=$2
+echo "" > $log_file
+
+#main functionality
+
+function analyze(){
+	if [ -f $1 ]
+        then
+				echo "processing $1"
+                ./wrapper_new $1 2&>>$log_file
+        elif [ -d $1 ]
+        then
+                echo "entering directory $1.."
+                for x in `ls $1`; do
+                        analyze $1/$x
+                done
+                echo "leaving directory $1.."
+        fi
+
+}
+
+analyze $f_path
+
+
+
+
